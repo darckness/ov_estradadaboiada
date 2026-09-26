@@ -33,8 +33,8 @@ local function CreateWorldBlip(coords)
 
     if not warnedNoBlip then
         warnedNoBlip = true
-        print("^1[ov_cattletransport] Não consegui criar blip: nenhuma native de blip disponível nesta build do FXServer/RedM.^7")
-        print("^1[ov_cattletransport] O restante da missão (spawn de vacas, entrega, pagamento) continua funcionando normalmente.^7")
+        print("^1[ov_estradadaboiada] Não consegui criar blip: nenhuma native de blip disponível nesta build do FXServer/RedM.^7")
+        print("^1[ov_estradadaboiada] O restante da missão (spawn de vacas, entrega, pagamento) continua funcionando normalmente.^7")
     end
     return nil
 end
@@ -78,7 +78,7 @@ end
 RegisterKeyMapping('cattletransport_start', 'Iniciar Transporte de Gado', 'keyboard', 'g')
 RegisterCommand('cattletransport_start', function()
     if nearStart and not missionActive then
-        TriggerServerEvent('ov_cattletransport:startMission')
+        TriggerServerEvent('ov_estradadaboiada:startMission')
     end
 end, false)
 
@@ -138,17 +138,17 @@ end)
 -- =========================================================
 RegisterCommand('blipsprite', function(source, args)
     if not startBlipHandle then
-        print("^1[ov_cattletransport] Blip de Valentine ainda não foi criado.^7")
+        print("^1[ov_estradadaboiada] Blip de Valentine ainda não foi criado.^7")
         return
     end
     local name = args[1]
     if not name then
-        print("^3[ov_cattletransport] Uso: /blipsprite <nome, ex: BLIP_AMBIENT_HERD>^7")
+        print("^3[ov_estradadaboiada] Uso: /blipsprite <nome, ex: BLIP_AMBIENT_HERD>^7")
         return
     end
     local hash = GetHashKey(name)
     local ok = pcall(SetBlipSprite, startBlipHandle, hash, true)
-    print(("[ov_cattletransport] /blipsprite %s (hash %s) -> pcall ok: %s"):format(name, tostring(hash), tostring(ok)))
+    print(("[ov_estradadaboiada] /blipsprite %s (hash %s) -> pcall ok: %s"):format(name, tostring(hash), tostring(ok)))
 end, false)
 
 -- =========================================================
@@ -192,7 +192,7 @@ end)
 -- =========================================================
 -- Início da missão: spawna as vacas e cria o blip de entrega
 -- =========================================================
-RegisterNetEvent('ov_cattletransport:beginClient', function()
+RegisterNetEvent('ov_estradadaboiada:beginClient', function()
     if missionActive then return end
     missionActive = true
     spawnedCows = {}
@@ -204,19 +204,19 @@ RegisterNetEvent('ov_cattletransport:beginClient', function()
     for _, name in ipairs(Config.CowModelCandidates) do
         local hash = GetHashKey(name)
         if IsModelValid(hash) and IsModelAPed(hash) then
-            print(("^2[ov_cattletransport] Modelo de vaca válido encontrado: '%s' (hash %s). Atualize Config.CowModelCandidates para deixar só esse no topo.^7"):format(name, tostring(hash)))
+            print(("^2[ov_estradadaboiada] Modelo de vaca válido encontrado: '%s' (hash %s). Atualize Config.CowModelCandidates para deixar só esse no topo.^7"):format(name, tostring(hash)))
             cowModelHash = hash
             break
         else
-            print(("^3[ov_cattletransport] Testando modelo '%s' -> inválido, tentando o próximo...^7"):format(name))
+            print(("^3[ov_estradadaboiada] Testando modelo '%s' -> inválido, tentando o próximo...^7"):format(name))
         end
     end
 
     if not cowModelHash then
-        print("^1[ov_cattletransport] Nenhum modelo de vaca da lista é válido nesta build. Missão cancelada.^7")
+        print("^1[ov_estradadaboiada] Nenhum modelo de vaca da lista é válido nesta build. Missão cancelada.^7")
         VORPcore.NotifyRightTip("Erro: nenhum modelo de gado válido encontrado. Avise um admin.", 5000)
         missionActive = false
-        TriggerServerEvent('ov_cattletransport:cancelMission')
+        TriggerServerEvent('ov_estradadaboiada:cancelMission')
         return
     end
 
@@ -228,10 +228,10 @@ RegisterNetEvent('ov_cattletransport:beginClient', function()
     end
 
     if not HasModelLoaded(cowModelHash) then
-        print("^1[ov_cattletransport] O modelo de vaca não carregou a tempo. Missão cancelada.^7")
+        print("^1[ov_estradadaboiada] O modelo de vaca não carregou a tempo. Missão cancelada.^7")
         VORPcore.NotifyRightTip("Erro ao carregar o gado. Tente novamente.", 5000)
         missionActive = false
-        TriggerServerEvent('ov_cattletransport:cancelMission')
+        TriggerServerEvent('ov_estradadaboiada:cancelMission')
         return
     end
 
@@ -252,9 +252,9 @@ RegisterNetEvent('ov_cattletransport:beginClient', function()
         local cow = CreatePed(cowModelHash, x, y, z, 0.0, true, true)
 
         if not cow or cow == 0 or not DoesEntityExist(cow) then
-            print(("^1[ov_cattletransport] Falha ao criar vaca #%d em (%.2f, %.2f, %.2f) [ground ajustado: %s] - handle: %s^7"):format(i, x, y, z, tostring(pcallOk and foundGround), tostring(cow)))
+            print(("^1[ov_estradadaboiada] Falha ao criar vaca #%d em (%.2f, %.2f, %.2f) [ground ajustado: %s] - handle: %s^7"):format(i, x, y, z, tostring(pcallOk and foundGround), tostring(cow)))
         else
-            print(("^2[ov_cattletransport] Vaca #%d criada OK (handle %s) em (%.2f, %.2f, %.2f) [ground ajustado: %s]^7"):format(i, tostring(cow), x, y, z, tostring(pcallOk and foundGround)))
+            print(("^2[ov_estradadaboiada] Vaca #%d criada OK (handle %s) em (%.2f, %.2f, %.2f) [ground ajustado: %s]^7"):format(i, tostring(cow), x, y, z, tostring(pcallOk and foundGround)))
             SetEntityAsMissionEntity(cow, true, true)
             SetBlockingOfNonTemporaryEvents(cow, true)
             SetPedCanBeTargetted(cow, false)
@@ -367,7 +367,7 @@ RegisterNetEvent('ov_cattletransport:beginClient', function()
                 VORPcore.NotifyRightTip("Todas as vacas morreram. Missão cancelada.", 5000)
                 missionActive = false
                 RemoveWorldBlip(deliveryBlip)
-                TriggerServerEvent('ov_cattletransport:cancelMission')
+                TriggerServerEvent('ov_estradadaboiada:cancelMission')
 
             elseif deliveredCount > 0 and deliveredCount >= aliveCount then
                 -- todas as vacas vivas chegaram ao destino
@@ -381,7 +381,7 @@ RegisterNetEvent('ov_cattletransport:beginClient', function()
                     end
                 end
 
-                TriggerServerEvent('ov_cattletransport:completeMission', deliveredCount)
+                TriggerServerEvent('ov_estradadaboiada:completeMission', deliveredCount)
             end
         end
     end)

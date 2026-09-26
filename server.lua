@@ -14,7 +14,7 @@ local function getCooldownRemaining(src)
     return 0
 end
 
-RegisterNetEvent('ov_cattletransport:startMission', function()
+RegisterNetEvent('ov_estradadaboiada:startMission', function()
     local _source = source
 
     if activeMissions[_source] then
@@ -29,10 +29,10 @@ RegisterNetEvent('ov_cattletransport:startMission', function()
     end
 
     activeMissions[_source] = true
-    TriggerClientEvent('ov_cattletransport:beginClient', _source)
+    TriggerClientEvent('ov_estradadaboiada:beginClient', _source)
 end)
 
-RegisterNetEvent('ov_cattletransport:completeMission', function(deliveredCount)
+RegisterNetEvent('ov_estradadaboiada:completeMission', function(deliveredCount)
     local _source = source
 
     if not activeMissions[_source] then return end
@@ -61,7 +61,7 @@ RegisterNetEvent('ov_cattletransport:completeMission', function(deliveredCount)
     lastMissionTime[_source] = os.time()
 end)
 
-RegisterNetEvent('ov_cattletransport:cancelMission', function()
+RegisterNetEvent('ov_estradadaboiada:cancelMission', function()
     local _source = source
     activeMissions[_source] = nil
     lastMissionTime[_source] = os.time()

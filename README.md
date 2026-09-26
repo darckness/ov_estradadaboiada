@@ -1,4 +1,4 @@
-# ov_cattletransport
+# ov_estradadaboiada
 
 Missão de transporte de gado para RedM com **VORPCore**: pegue 6 vacas em
 Valentine e conduza a manada até Rhodes, a cavalo, para receber uma
@@ -10,9 +10,9 @@ recompensa em dinheiro.
 
 ## Instalação
 
-1. Copie a pasta `ov_cattletransport` para dentro de `resources/[VORP]/` (ou
+1. Copie a pasta `ov_estradadaboiada` para dentro de `resources/[VORP]/` (ou
    onde ficam seus outros resources VORP).
-2. Adicione `ensure ov_cattletransport` no `server.cfg`, **depois** de
+2. Adicione `ensure ov_estradadaboiada` no `server.cfg`, **depois** de
    `ensure vorp_core`.
 3. Ajuste as coordenadas em `config.lua` (veja [Configuração](#configuração)).
 4. Reinicie o resource (ou o servidor inteiro, na primeira vez).
@@ -103,7 +103,7 @@ não deve quebrar nada de qualquer forma.
 ## Estrutura de arquivos
 
 ```
-ov_cattletransport/
+ov_estradadaboiada/
 ├── fxmanifest.lua
 ├── config.lua
 ├── client.lua

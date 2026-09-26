@@ -8,25 +8,58 @@ Config.StartPoint = {
     coords = vector3(-270.20, 669.85, 113.31),
     heading = 331.3,
     blip = {
-        sprite = `BLIP_AMBIENT_HERD`, -- ícone de "trabalho/missão" - troque por outro nome da lista de blips do RDR3 se quiser
+        sprite = `BLIP_AMBIENT_HERD`, -- ícone de manada - troque por outro nome da lista de blips do RDR3 se quiser
         scale = 0.9,
         label = "Transporte de Gado"
     }
 }
 
 -- ============================
--- PONTO DE ENTREGA (Rhodes)
+-- DESTINOS DE ENTREGA
 -- ============================
--- Ajuste as coordenadas para o local exato de entrega em Rhodes.
-Config.DeliveryPoint = {
-    coords = vector3(-294.27, 630.91, 111.45),
-    radius = 15.0,  -- raio (em metros) que conta como "chegou no destino"
-    blip = {
-        sprite = `blip_code_waypoint`, -- ícone de vagão/entrega - existe também BLIP_AMBIENT_HERD se preferir
-        scale = 0.9,
-        label = "Entregar Gado - Rhodes"
-    }
+-- Cada destino tem suas próprias coordenadas e preço por vaca (cidades
+-- mais longe de Valentine pagam mais). Ajuste as coordenadas de cada uma
+-- indo até o local no jogo e usando /mycoords (veja o README).
+-- O "key" de cada destino (ex: "rhodes") é usado internamente - pode
+-- adicionar quantos destinos quiser, seguindo o mesmo formato.
+Config.Destinations = {
+    rhodes = {
+        name = "Rhodes",
+        coords = vector3(1274.0, -1308.0, 77.0),
+        radius = 15.0,       -- raio (em metros) que conta como "chegou no destino"
+        pricePerCow = 5.00,  -- mais perto de Valentine = paga menos
+        blip = {
+            sprite = `blip_code_waypoint`,
+            scale = 0.9,
+        }
+    },
+    blackwater = {
+        name = "Blackwater",
+        coords = vector3(-1848.0, -450.0, 42.0), -- AJUSTE com /mycoords
+        radius = 15.0,
+        pricePerCow = 8.50,  -- mais longe = paga mais
+        blip = {
+            sprite = `blip_code_waypoint`,
+            scale = 0.9,
+        }
+    },
+    saint_denis = {
+        name = "Saint Denis",
+        coords = vector3(2650.0, -1240.0, 50.0), -- AJUSTE com /mycoords
+        radius = 15.0,
+        pricePerCow = 12.00, -- o mais longe, paga o melhor
+        blip = {
+            sprite = `blip_code_waypoint`,
+            scale = 0.9,
+        }
+    },
 }
+
+-- Quantidade de gado selecionável no menu (lista de opções fixas, de
+-- CowCountMin até CowCountMax, pulando de CowCountStep em CowCountStep)
+Config.CowCountMin = 2
+Config.CowCountMax = 12
+Config.CowCountStep = 2
 
 -- ============================
 -- GADO
@@ -37,8 +70,7 @@ Config.DeliveryPoint = {
 Config.CowModelCandidates = {
     "a_c_cow", -- confirmado válido nesta build
 }
-Config.CowCount = 6
-Config.SpawnRadius = 6.0 -- raio em que as 6 vacas nascem ao redor do ponto inicial (menor agora, já que a manada as mantém juntas)
+Config.SpawnRadius = 6.0 -- raio em que as vacas nascem ao redor do ponto inicial (a manada as mantém juntas depois)
 
 -- ============================
 -- COMPORTAMENTO DE MANADA
@@ -53,7 +85,7 @@ Config.SpawnRadius = 6.0 -- raio em que as 6 vacas nascem ao redor do ponto inic
 -- mesma direção e mesmo ritmo pra todas, sem decisões individuais.
 Config.Herd = {
     checkInterval = 500,          -- ms entre atualizações (constante = movimento sempre no mesmo ritmo)
-    pushRange = 14.0,             -- distância da âncora até você em que a manada reage e anda
+    pushRange = 24.0,             -- distância da âncora até você em que a manada reage e anda
     formationRadius = 2.0,        -- raio em que a posição fixa de cada vaca na formação é sorteada (só uma vez)
 
     -- Padrão: enquanto você só está perto, a manada anda CALMA (sem
@@ -68,14 +100,21 @@ Config.Herd = {
     sprintSpeed = 3.0,            -- velocidade durante a disparada
     sprintStepDistance = 4.5,     -- quanto a âncora avança por atualização, durante a disparada
     sprintDuration = 3000,        -- ms que a disparada dura após apertar a tecla
+
+    -- Trava de segurança (extra, não interfere no comportamento normal):
+    -- fica de olho em vacas que ficaram longe demais da âncora (presas
+    -- em obstáculo, engasgo de rede, etc.) e reforça o comando de volta
+    -- com mais urgência (nunca teleporta).
+    leashCheckInterval = 1500,    -- ms entre checagens de segurança
+    leashDistance = 8.0,          -- se ficar mais longe que isso da âncora, reforça o comando de volta
 }
 
 -- ============================
 -- RECOMPENSA
 -- ============================
--- currencyType segue o padrão do VORPCore: 0 = dinheiro, 1 = ouro
+-- O valor por vaca é definido em cada destino (Config.Destinations).
+-- Aqui só fica o tipo de moeda: 0 = dinheiro, 1 = ouro (padrão VORPCore)
 Config.Reward = {
-    perCow = 5.00,
     currencyType = 0
 }
 

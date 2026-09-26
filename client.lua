@@ -1,4 +1,5 @@
 VORPcore = exports.vorp_core:GetCore()
+local Menu = exports.vorp_menu:GetMenuData()
 
 -- =========================================================
 -- Helper à prova de falhas para criar blips.
@@ -33,8 +34,8 @@ local function CreateWorldBlip(coords)
 
     if not warnedNoBlip then
         warnedNoBlip = true
-        print("^1[ov_estradadaboiada] Não consegui criar blip: nenhuma native de blip disponível nesta build do FXServer/RedM.^7")
-        print("^1[ov_estradadaboiada] O restante da missão (spawn de vacas, entrega, pagamento) continua funcionando normalmente.^7")
+        print("^1[ov_cattletransport] Não consegui criar blip: nenhuma native de blip disponível nesta build do FXServer/RedM.^7")
+        print("^1[ov_cattletransport] O restante da missão (spawn de vacas, entrega, pagamento) continua funcionando normalmente.^7")
     end
     return nil
 end
@@ -60,6 +61,29 @@ local sprintUntil = 0 -- enquanto GetGameTimer() < isso, a manada está "dispara
 local deliveryBlip = nil
 local nearStart = false
 
+-- Acha a posição do jogador mais próximo de um ponto (você ou qualquer
+-- outro jogador por perto), pra a manada reagir a quem estiver mais perto
+-- dela, não só a você. GetActivePlayers só retorna jogadores que o seu
+-- cliente já está enxergando (dentro do alcance normal de sincronização).
+local function GetClosestPlayerCoordsTo(point)
+    local closestCoords = GetEntityCoords(PlayerPedId())
+    local closestDist = #(closestCoords - point)
+
+    for _, playerId in ipairs(GetActivePlayers()) do
+        local ped = GetPlayerPed(playerId)
+        if ped and ped ~= 0 and DoesEntityExist(ped) then
+            local coords = GetEntityCoords(ped)
+            local dist = #(coords - point)
+            if dist < closestDist then
+                closestDist = dist
+                closestCoords = coords
+            end
+        end
+    end
+
+    return closestCoords
+end
+
 -- Manda a vaca pra um ponto usando navegação com desvio de obstáculos
 -- (usa o sistema de pathfinding do jogo, então ela contorna cercas,
 -- árvores, etc. em vez de ficar presa). Cai pra linha reta só se essa
@@ -75,10 +99,91 @@ end
 -- que o bind padrão seja G, mesmo que o jogador troque outras
 -- teclas nas configurações do jogo)
 -- =========================================================
+-- =========================================================
+-- Menu (vorp_menu): escolher destino e quantidade de gado
+-- =========================================================
+local function OpenCowCountMenu(destinationKey)
+    local destination = Config.Destinations[destinationKey]
+
+    local elements = {}
+    for count = Config.CowCountMin, Config.CowCountMax, Config.CowCountStep do
+        local total = count * destination.pricePerCow
+        table.insert(elements, {
+            label = ("%d cabeças de gado"):format(count),
+            value = count,
+            desc = ("Total estimado se todas chegarem vivas: $%.2f"):format(total),
+            descPrice = {
+                amount = total,
+                icon = "money",
+                text = "Total estimado",
+            }
+        })
+    end
+
+    Menu.Open('default', GetCurrentResourceName(), 'ov_cattletransport_cowcount',
+        {
+            title = "Transporte de Gado",
+            subtext = ("Destino: %s ($%.2f por cabeça)"):format(destination.name, destination.pricePerCow),
+            align = "top-left",
+            elements = elements,
+            maxVisibleItems = 6,
+            hideRadar = true,
+            soundOpen = true,
+        },
+        function(data, menu) -- submit
+            local cowCount = data.current.value
+            menu.close(true, true, true)
+            TriggerServerEvent('ov_cattletransport:startMission', destinationKey, cowCount)
+        end,
+        function(data, menu) -- cancel
+            menu.close(false, true, false)
+            OpenDestinationMenu()
+        end
+    )
+end
+
+function OpenDestinationMenu()
+    local elements = {}
+    for key, destination in pairs(Config.Destinations) do
+        local dist = #(destination.coords - Config.StartPoint.coords)
+        table.insert(elements, {
+            label = destination.name,
+            value = key,
+            desc = ("Distância aproximada de Valentine: %dm"):format(math.floor(dist)),
+            descPrice = {
+                amount = destination.pricePerCow,
+                icon = "money",
+                text = "Por cabeça de gado",
+            }
+        })
+    end
+
+    Menu.Open('default', GetCurrentResourceName(), 'ov_cattletransport_destination',
+        {
+            title = "Transporte de Gado",
+            subtext = "Escolha o destino da entrega",
+            align = "top-left",
+            elements = elements,
+            maxVisibleItems = 6,
+            hideRadar = true,
+            soundOpen = true,
+        },
+        function(data, menu) -- submit
+            local destinationKey = data.current.value
+            menu.close(false, true, false)
+            OpenCowCountMenu(destinationKey)
+        end,
+        function(data, menu) -- cancel
+            menu.close(true, true, true)
+        end
+    )
+end
+
 RegisterKeyMapping('cattletransport_start', 'Iniciar Transporte de Gado', 'keyboard', 'g')
 RegisterCommand('cattletransport_start', function()
     if nearStart and not missionActive then
-        TriggerServerEvent('ov_estradadaboiada:startMission')
+        Menu.CloseAll(true, false, false)
+        OpenDestinationMenu()
     end
 end, false)
 
@@ -138,17 +243,17 @@ end)
 -- =========================================================
 RegisterCommand('blipsprite', function(source, args)
     if not startBlipHandle then
-        print("^1[ov_estradadaboiada] Blip de Valentine ainda não foi criado.^7")
+        print("^1[ov_cattletransport] Blip de Valentine ainda não foi criado.^7")
         return
     end
     local name = args[1]
     if not name then
-        print("^3[ov_estradadaboiada] Uso: /blipsprite <nome, ex: BLIP_AMBIENT_HERD>^7")
+        print("^3[ov_cattletransport] Uso: /blipsprite <nome, ex: BLIP_AMBIENT_HERD>^7")
         return
     end
     local hash = GetHashKey(name)
     local ok = pcall(SetBlipSprite, startBlipHandle, hash, true)
-    print(("[ov_estradadaboiada] /blipsprite %s (hash %s) -> pcall ok: %s"):format(name, tostring(hash), tostring(ok)))
+    print(("[ov_cattletransport] /blipsprite %s (hash %s) -> pcall ok: %s"):format(name, tostring(hash), tostring(ok)))
 end, false)
 
 -- =========================================================
@@ -192,31 +297,38 @@ end)
 -- =========================================================
 -- Início da missão: spawna as vacas e cria o blip de entrega
 -- =========================================================
-RegisterNetEvent('ov_estradadaboiada:beginClient', function()
+RegisterNetEvent('ov_cattletransport:beginClient', function(destinationKey, cowCount)
     if missionActive then return end
+
+    local currentDestination = Config.Destinations[destinationKey]
+    if not currentDestination then
+        print(("^1[ov_cattletransport] Destino inválido recebido do servidor: %s^7"):format(tostring(destinationKey)))
+        return
+    end
+
     missionActive = true
     spawnedCows = {}
     herdOffsets = {}
 
-    VORPcore.NotifyRightTip("Leve as vacas até Rhodes.", 5000)
+    VORPcore.NotifyRightTip(("Leve as vacas até %s."):format(currentDestination.name), 5000)
 
     local cowModelHash = nil
     for _, name in ipairs(Config.CowModelCandidates) do
         local hash = GetHashKey(name)
         if IsModelValid(hash) and IsModelAPed(hash) then
-            print(("^2[ov_estradadaboiada] Modelo de vaca válido encontrado: '%s' (hash %s). Atualize Config.CowModelCandidates para deixar só esse no topo.^7"):format(name, tostring(hash)))
+            print(("^2[ov_cattletransport] Modelo de vaca válido encontrado: '%s' (hash %s). Atualize Config.CowModelCandidates para deixar só esse no topo.^7"):format(name, tostring(hash)))
             cowModelHash = hash
             break
         else
-            print(("^3[ov_estradadaboiada] Testando modelo '%s' -> inválido, tentando o próximo...^7"):format(name))
+            print(("^3[ov_cattletransport] Testando modelo '%s' -> inválido, tentando o próximo...^7"):format(name))
         end
     end
 
     if not cowModelHash then
-        print("^1[ov_estradadaboiada] Nenhum modelo de vaca da lista é válido nesta build. Missão cancelada.^7")
+        print("^1[ov_cattletransport] Nenhum modelo de vaca da lista é válido nesta build. Missão cancelada.^7")
         VORPcore.NotifyRightTip("Erro: nenhum modelo de gado válido encontrado. Avise um admin.", 5000)
         missionActive = false
-        TriggerServerEvent('ov_estradadaboiada:cancelMission')
+        TriggerServerEvent('ov_cattletransport:cancelMission')
         return
     end
 
@@ -228,14 +340,14 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
     end
 
     if not HasModelLoaded(cowModelHash) then
-        print("^1[ov_estradadaboiada] O modelo de vaca não carregou a tempo. Missão cancelada.^7")
+        print("^1[ov_cattletransport] O modelo de vaca não carregou a tempo. Missão cancelada.^7")
         VORPcore.NotifyRightTip("Erro ao carregar o gado. Tente novamente.", 5000)
         missionActive = false
-        TriggerServerEvent('ov_estradadaboiada:cancelMission')
+        TriggerServerEvent('ov_cattletransport:cancelMission')
         return
     end
 
-    for i = 1, Config.CowCount do
+    for i = 1, cowCount do
         local angle = math.random() * 6.28
         local dist = math.random(2, math.floor(Config.SpawnRadius))
         local x = Config.StartPoint.coords.x + math.cos(angle) * dist
@@ -252,9 +364,9 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
         local cow = CreatePed(cowModelHash, x, y, z, 0.0, true, true)
 
         if not cow or cow == 0 or not DoesEntityExist(cow) then
-            print(("^1[ov_estradadaboiada] Falha ao criar vaca #%d em (%.2f, %.2f, %.2f) [ground ajustado: %s] - handle: %s^7"):format(i, x, y, z, tostring(pcallOk and foundGround), tostring(cow)))
+            print(("^1[ov_cattletransport] Falha ao criar vaca #%d em (%.2f, %.2f, %.2f) [ground ajustado: %s] - handle: %s^7"):format(i, x, y, z, tostring(pcallOk and foundGround), tostring(cow)))
         else
-            print(("^2[ov_estradadaboiada] Vaca #%d criada OK (handle %s) em (%.2f, %.2f, %.2f) [ground ajustado: %s]^7"):format(i, tostring(cow), x, y, z, tostring(pcallOk and foundGround)))
+            print(("^2[ov_cattletransport] Vaca #%d criada OK (handle %s) em (%.2f, %.2f, %.2f) [ground ajustado: %s]^7"):format(i, tostring(cow), x, y, z, tostring(pcallOk and foundGround)))
             SetEntityAsMissionEntity(cow, true, true)
             SetBlockingOfNonTemporaryEvents(cow, true)
             SetPedCanBeTargetted(cow, false)
@@ -281,13 +393,13 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
 
     SetModelAsNoLongerNeeded(cowModelHash)
 
-    deliveryBlip = CreateWorldBlip(Config.DeliveryPoint.coords)
+    deliveryBlip = CreateWorldBlip(currentDestination.coords)
     if deliveryBlip then
-        pcall(SetBlipSprite, deliveryBlip, Config.DeliveryPoint.blip.sprite, true)
-        pcall(SetBlipScale, deliveryBlip, Config.DeliveryPoint.blip.scale)
+        pcall(SetBlipSprite, deliveryBlip, currentDestination.blip.sprite, true)
+        pcall(SetBlipScale, deliveryBlip, currentDestination.blip.scale)
         pcall(SetBlipAsShortRange, deliveryBlip, false)
         pcall(SetBlipRoute, deliveryBlip, true)
-        pcall(SetBlipName, deliveryBlip, Config.DeliveryPoint.blip.label)
+        pcall(SetBlipName, deliveryBlip, ("Entregar Gado - %s"):format(currentDestination.name))
     end
 
     -- Loop de manada: a "âncora" avança quando você (a cavalo) chega
@@ -305,7 +417,7 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
                 local speed = sprinting and Config.Herd.sprintSpeed or Config.Herd.walkSpeed
                 local stepDistance = sprinting and Config.Herd.sprintStepDistance or Config.Herd.walkStepDistance
 
-                local playerCoords = GetEntityCoords(PlayerPedId())
+                local playerCoords = GetClosestPlayerCoordsTo(herdAnchor)
                 local dist = #(playerCoords - herdAnchor)
 
                 -- Durante a disparada, a manada corre mesmo sem você por perto
@@ -343,6 +455,32 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
         end
     end)
 
+    -- Trava de segurança (extra, separada do loop de manada acima): fica
+    -- de olho em vacas que ficaram longe demais da âncora - por travar
+    -- em obstáculo, engasgo de rede, etc. - e força elas de volta com
+    -- mais urgência, sem alterar o comportamento normal da manada.
+    CreateThread(function()
+        while missionActive do
+            Wait(Config.Herd.leashCheckInterval)
+
+            if herdAnchor then
+                for _, cow in ipairs(spawnedCows) do
+                    if DoesEntityExist(cow) and not IsEntityDead(cow) then
+                        local cowCoords = GetEntityCoords(cow)
+                        local dist = #(cowCoords - herdAnchor)
+                        local offset = herdOffsets[cow] or { x = 0.0, y = 0.0 }
+
+                        if dist > Config.Herd.leashDistance then
+                            -- longe demais: reforça o comando de volta com mais urgência
+                            -- (sem teleportar - só insiste na navegação até o ponto certo)
+                            MoveCowTo(cow, herdAnchor.x + offset.x, herdAnchor.y + offset.y, herdAnchor.z, Config.Herd.sprintSpeed)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
     -- Loop de verificação: as vacas chegaram no destino?
     CreateThread(function()
         while missionActive do
@@ -355,8 +493,8 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
                 if DoesEntityExist(cow) and not IsEntityDead(cow) then
                     aliveCount = aliveCount + 1
                     local cowCoords = GetEntityCoords(cow)
-                    local distToDelivery = #(cowCoords - Config.DeliveryPoint.coords)
-                    if distToDelivery <= Config.DeliveryPoint.radius then
+                    local distToDelivery = #(cowCoords - currentDestination.coords)
+                    if distToDelivery <= currentDestination.radius then
                         deliveredCount = deliveredCount + 1
                     end
                 end
@@ -367,7 +505,7 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
                 VORPcore.NotifyRightTip("Todas as vacas morreram. Missão cancelada.", 5000)
                 missionActive = false
                 RemoveWorldBlip(deliveryBlip)
-                TriggerServerEvent('ov_estradadaboiada:cancelMission')
+                TriggerServerEvent('ov_cattletransport:cancelMission')
 
             elseif deliveredCount > 0 and deliveredCount >= aliveCount then
                 -- todas as vacas vivas chegaram ao destino
@@ -381,7 +519,7 @@ RegisterNetEvent('ov_estradadaboiada:beginClient', function()
                     end
                 end
 
-                TriggerServerEvent('ov_estradadaboiada:completeMission', deliveredCount)
+                TriggerServerEvent('ov_cattletransport:completeMission', deliveredCount)
             end
         end
     end)

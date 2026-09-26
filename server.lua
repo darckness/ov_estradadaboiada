@@ -1,6 +1,6 @@
 VORPcore = exports.vorp_core:GetCore()
 
-local activeMissions = {}   -- [source] = true enquanto a missão está em andamento
+local activeMissions = {}   -- [source] = { destinationKey = .., cowCount = .. } enquanto a missão está em andamento
 local lastMissionTime = {}  -- [source] = os.time() da última missão concluída/cancelada
 
 local function getCooldownRemaining(src)
@@ -14,7 +14,7 @@ local function getCooldownRemaining(src)
     return 0
 end
 
-RegisterNetEvent('ov_estradadaboiada:startMission', function()
+RegisterNetEvent('ov_cattletransport:startMission', function(destinationKey, cowCount)
     local _source = source
 
     if activeMissions[_source] then
@@ -28,17 +28,38 @@ RegisterNetEvent('ov_estradadaboiada:startMission', function()
         return
     end
 
-    activeMissions[_source] = true
-    TriggerClientEvent('ov_estradadaboiada:beginClient', _source)
+    -- validação contra valores manipulados vindos do client (o menu já
+    -- restringe isso, mas nunca confiamos só no client)
+    local destination = Config.Destinations[destinationKey]
+    if not destination then
+        TriggerClientEvent('vorp:TipRight', _source, "Destino inválido.", 4000)
+        return
+    end
+
+    cowCount = math.floor(tonumber(cowCount) or 0)
+    if cowCount < Config.CowCountMin or cowCount > Config.CowCountMax then
+        TriggerClientEvent('vorp:TipRight', _source, "Quantidade de gado inválida.", 4000)
+        return
+    end
+
+    activeMissions[_source] = { destinationKey = destinationKey, cowCount = cowCount }
+    TriggerClientEvent('ov_cattletransport:beginClient', _source, destinationKey, cowCount)
 end)
 
-RegisterNetEvent('ov_estradadaboiada:completeMission', function(deliveredCount)
+RegisterNetEvent('ov_cattletransport:completeMission', function(deliveredCount)
     local _source = source
+    local mission = activeMissions[_source]
 
-    if not activeMissions[_source] then return end
+    if not mission then return end
+
+    local destination = Config.Destinations[mission.destinationKey]
+    if not destination then
+        activeMissions[_source] = nil
+        return
+    end
 
     -- validação básica contra valores manipulados vindos do client
-    if type(deliveredCount) ~= "number" or deliveredCount <= 0 or deliveredCount > Config.CowCount then
+    if type(deliveredCount) ~= "number" or deliveredCount <= 0 or deliveredCount > mission.cowCount then
         activeMissions[_source] = nil
         return
     end
@@ -50,18 +71,18 @@ RegisterNetEvent('ov_estradadaboiada:completeMission', function(deliveredCount)
     end
 
     local character = user.getUsedCharacter
-    local amount = math.floor(deliveredCount * Config.Reward.perCow)
+    local amount = math.floor(deliveredCount * destination.pricePerCow)
 
     -- currencyType 0 = dinheiro, 1 = ouro (conforme Config.Reward.currencyType)
     character.addCurrency(Config.Reward.currencyType, amount)
 
-    TriggerClientEvent('vorp:TipRight', _source, ("Você recebeu $%d pela entrega de %d cabeça(s) de gado."):format(amount, deliveredCount), 5000)
+    TriggerClientEvent('vorp:TipRight', _source, ("Você recebeu $%d pela entrega de %d cabeça(s) de gado em %s."):format(amount, deliveredCount, destination.name), 5000)
 
     activeMissions[_source] = nil
     lastMissionTime[_source] = os.time()
 end)
 
-RegisterNetEvent('ov_estradadaboiada:cancelMission', function()
+RegisterNetEvent('ov_cattletransport:cancelMission', function()
     local _source = source
     activeMissions[_source] = nil
     lastMissionTime[_source] = os.time()

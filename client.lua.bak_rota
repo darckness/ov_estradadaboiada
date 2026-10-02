@@ -1,7 +1,5 @@
 local Core = exports.vorp_core:GetCore()
 local Menu = exports.vorp_menu:GetMenuData()
--- várias natives do RedM devolvem 0/1 em vez de false/true, e em Lua o 0 é VERDADEIRO
-local function Bool(v) return v == true or v == 1 end
 
 local STYLE_DEFAULT = 1664425300
 
@@ -36,22 +34,10 @@ local function LoadModel(model)
     return HasModelLoaded(hash) and hash or nil
 end
 
--- procura o chão logo acima primeiro (nas cidades, de muito alto pega o telhado)
 local function GroundZ(x, y, z)
-    for _, offset in ipairs({ 3.0, 50.0 }) do
-        local ok, found, gz = pcall(GetGroundZFor_3dCoord, x, y, z + offset, false)
-        if ok and found and gz and gz ~= 0.0 then return gz end
-    end
+    local ok, found, gz = pcall(GetGroundZFor_3dCoord, x, y, z + 50.0, false)
+    if ok and found and gz and gz ~= 0.0 then return gz end
     return z
-end
-
--- rota GPS até um ponto (no RedM não existe SetBlipRoute)
-local function GpsRoute(to)
-    pcall(ClearGpsMultiRoute)
-    if not to then return end
-    StartGpsMultiRoute(joaat("COLOR_YELLOW"), true, true)
-    AddPointToGpsMultiRoute(to.x, to.y, to.z, false)
-    SetGpsMultiRouteRender(true)
 end
 
 local function RemoveBlipSafe(blip)
@@ -60,7 +46,7 @@ local function RemoveBlipSafe(blip)
 end
 
 local function EntFromNet(net)
-    if not net or not Bool(NetworkDoesNetworkIdExist(net)) then return nil end
+    if not net or not NetworkDoesNetworkIdExist(net) then return nil end
     local ent = NetworkGetEntityFromNetworkId(net)
     if ent and ent ~= 0 and DoesEntityExist(ent) then return ent end
 end
@@ -91,14 +77,14 @@ end
 -- =========================================================
 -- Capataz: NPC + blip + prompt
 -- =========================================================
-local npcs = {}            -- [curral] = ped
+local npc = nil
 local prompt, promptGroup = 0, GetRandomIntInRange(0, 0xffffff)
 local deliverPrompt, deliverGroup = 0, GetRandomIntInRange(0, 0xffffff)
 local menuOpen = false
 
 local function MakePrompt(group, text)
     local p = UiPromptRegisterBegin()
-    UiPromptSetControlAction(p, Config.Prompt.key)
+    UiPromptSetControlAction(p, Config.StartPoint.prompt.key)
     UiPromptSetText(p, VarString(10, 'LITERAL_STRING', text))
     UiPromptSetEnabled(p, true)
     UiPromptSetVisible(p, true)
@@ -108,11 +94,11 @@ local function MakePrompt(group, text)
     return p
 end
 
-local function SpawnNpc(i)
-    local pos = Config.Corrals[i].npc
-    local hash = LoadModel(Config.NpcModel)
+local function SpawnNpc()
+    local cfg = Config.StartPoint.npc
+    local hash = LoadModel(cfg.model)
     if not hash then return end
-    local ped = CreatePed(hash, pos.x, pos.y, GroundZ(pos.x, pos.y, pos.z), pos.w, false, false, false, false)
+    local ped = CreatePed(hash, cfg.coords.x, cfg.coords.y, cfg.coords.z, cfg.coords.w, false, false, false, false)
     SetModelAsNoLongerNeeded(hash)
     if not ped or ped == 0 then return end
     SetRandomOutfitVariation(ped, true)
@@ -121,46 +107,41 @@ local function SpawnNpc(i)
     SetEntityInvincible(ped, true)
     SetBlockingOfNonTemporaryEvents(ped, true)
     FreezeEntityPosition(ped, true)
-    npcs[i] = ped
+    npc = ped
 end
 
 CreateThread(function()
     repeat Wait(1000) until LocalPlayer.state.IsInSession
 
-    prompt = MakePrompt(promptGroup, Config.Prompt.text)
+    prompt = MakePrompt(promptGroup, Config.StartPoint.prompt.text)
     deliverPrompt = MakePrompt(deliverGroup, "Entregar o gado")
 
-    for _, corral in ipairs(Config.Corrals) do
-        local blip = BlipAddForCoords(STYLE_DEFAULT, corral.coords.x, corral.coords.y, corral.coords.z)
-        SetBlipSprite(blip, Config.Blip.sprite, true)
-        SetBlipName(blip, ("%s - %s"):format(Config.Blip.name, corral.name))
-    end
+    local start = Config.StartPoint
+    local blip = BlipAddForCoords(STYLE_DEFAULT, start.coords.x, start.coords.y, start.coords.z)
+    SetBlipSprite(blip, start.blip.sprite, true)
+    SetBlipName(blip, start.blip.name)
+
+    local npcPos = vector3(start.npc.coords.x, start.npc.coords.y, start.npc.coords.z)
 
     while true do
         local sleep = 1000
         local ped = PlayerPedId()
-        local me = GetEntityCoords(ped)
-        local near = nil
+        local dist = #(GetEntityCoords(ped) - npcPos)
 
-        for i, corral in ipairs(Config.Corrals) do
-            local dist = #(me - vector3(corral.npc.x, corral.npc.y, corral.npc.z))
-            if dist < Config.NpcSpawnDistance then
-                if not npcs[i] then SpawnNpc(i) end
-            elseif npcs[i] then
-                DeleteEntity(npcs[i])
-                npcs[i] = nil
-            end
-            if dist <= Config.Prompt.distance then near = i end
+        if dist < start.npc.spawnDistance then
+            if not npc then SpawnNpc() end
+        elseif npc then
+            DeleteEntity(npc)
+            npc = nil
         end
 
-        if not near then menuOpen = false end
+        if dist > start.prompt.distance then menuOpen = false end
 
-        if near and not menuOpen and not Bool(IsEntityDead(ped)) then
+        if dist <= start.prompt.distance and not menuOpen and not IsEntityDead(ped) then
             sleep = 0
-            local title = ("%s - %s"):format(Config.Prompt.title, Config.Corrals[near].name)
-            UiPromptSetActiveGroupThisFrame(promptGroup, VarString(10, 'LITERAL_STRING', title), 0, 0, 0, 0)
+            UiPromptSetActiveGroupThisFrame(promptGroup, VarString(10, 'LITERAL_STRING', start.prompt.title), 0, 0, 0, 0)
             if UiPromptHasStandardModeCompleted(prompt, 0) then
-                TriggerServerEvent('ov_boiada:openMenu', near)
+                TriggerServerEvent('ov_boiada:openMenu')
                 Wait(500)
             end
         end
@@ -179,12 +160,11 @@ end
 
 local OpenDestinationMenu
 
-local function OpenCowCountMenu(fromIndex, destIndex, cooldownLeft)
-    local dest = Config.Corrals[destIndex]
-    local price = Config.PricePerCow(fromIndex, destIndex)
+local function OpenCowCountMenu(destKey, cooldownLeft)
+    local dest = Config.Destinations[destKey]
     local elements = {}
     for count = Config.CowCountMin, Config.CowCountMax, Config.CowCountStep do
-        local total = count * price
+        local total = count * dest.pricePerCow
         elements[#elements + 1] = {
             label = ("%d cabeças de gado"):format(count),
             value = count,
@@ -194,50 +174,45 @@ local function OpenCowCountMenu(fromIndex, destIndex, cooldownLeft)
     end
 
     Menu.Open('default', GetCurrentResourceName(), 'ov_boiada_count',
-        { title = "Transporte de Gado", subtext = ("%s - $%.2f por cabeça"):format(dest.name, price),
+        { title = "Transporte de Gado", subtext = ("%s - $%.2f por cabeça"):format(dest.name, dest.pricePerCow),
           align = "top-left", elements = elements, maxVisibleItems = 6, hideRadar = true, soundOpen = true },
         function(data, menu)
             CloseMenu(menu)
-            TriggerServerEvent('ov_boiada:start', fromIndex, destIndex, data.current.value)
+            TriggerServerEvent('ov_boiada:start', destKey, data.current.value)
         end,
         function(_, menu)
             menu.close(false, true, false)
-            OpenDestinationMenu(fromIndex, cooldownLeft)
+            OpenDestinationMenu(cooldownLeft)
         end)
     menuOpen = true
 end
 
-OpenDestinationMenu = function(fromIndex, cooldownLeft)
+OpenDestinationMenu = function(cooldownLeft)
     local elements = {}
-    for i, dest in ipairs(Config.Corrals) do
-        if Config.ValidRoute(fromIndex, i) then
-            elements[#elements + 1] = {
-                label = dest.name,
-                value = i,
-                desc = ("Distância aproximada: %.1f km<br>Tempo limite: %d min%s"):format(Config.Distance(fromIndex, i) / 1000,
-                    Config.TimeLimit(fromIndex, i), cooldownLeft > 0 and ("<br><br>Disponível em %d min"):format(cooldownLeft) or ""),
-                descPrice = { amount = Config.PricePerCow(fromIndex, i), icon = "money", text = "Por cabeça" },
-            }
-        end
+    for key, dest in pairs(Config.Destinations) do
+        local dist = #(dest.coords - Config.StartPoint.coords)
+        elements[#elements + 1] = {
+            label = dest.name,
+            value = key,
+            desc = ("Distância aproximada: %dm<br>Tempo limite: %d min%s"):format(math.floor(dist), Config.TimeLimitMinutes,
+                cooldownLeft > 0 and ("<br><br>Disponível em %d min"):format(cooldownLeft) or ""),
+            descPrice = { amount = dest.pricePerCow, icon = "money", text = "Por cabeça" },
+        }
     end
     table.sort(elements, function(a, b) return a.descPrice.amount < b.descPrice.amount end)
-    if #elements == 0 then
-        elements[1] = { label = "Nenhum comprador por perto", value = "none", desc = "Nenhum curral na distância certa daqui." }
-    end
 
     Menu.Open('default', GetCurrentResourceName(), 'ov_boiada_dest',
-        { title = "Transporte de Gado", subtext = ("Saindo de %s - escolha o destino"):format(Config.Corrals[fromIndex].name),
+        { title = "Transporte de Gado", subtext = "Escolha o destino da entrega",
           align = "top-left", elements = elements, maxVisibleItems = 6, hideRadar = true, soundOpen = true },
         function(data, menu)
-            if data.current.value == "none" then return CloseMenu(menu) end
             menu.close(false, true, false)
-            OpenCowCountMenu(fromIndex, data.current.value, cooldownLeft)
+            OpenCowCountMenu(data.current.value, cooldownLeft)
         end,
         function(_, menu) CloseMenu(menu) end)
     menuOpen = true
 end
 
-RegisterNetEvent('ov_boiada:showMenu', function(fromIndex, hasMission, cooldownLeft)
+RegisterNetEvent('ov_boiada:showMenu', function(hasMission, cooldownLeft)
     Menu.CloseAll()
     if hasMission then
         Menu.Open('default', GetCurrentResourceName(), 'ov_boiada_cancel',
@@ -253,7 +228,7 @@ RegisterNetEvent('ov_boiada:showMenu', function(fromIndex, hasMission, cooldownL
             function(_, menu) CloseMenu(menu) end)
         menuOpen = true
     else
-        OpenDestinationMenu(fromIndex, cooldownLeft)
+        OpenDestinationMenu(cooldownLeft)
     end
 end)
 
@@ -262,7 +237,6 @@ end)
 -- =========================================================
 local function Cleanup()
     destBlip = RemoveBlipSafe(destBlip)
-    pcall(ClearGpsMultiRoute)
     for net, b in pairs(cowBlips) do cowBlips[net] = RemoveBlipSafe(b) end
     cowBlips = {}
 
@@ -285,11 +259,11 @@ RegisterNetEvent('ov_boiada:joined', function(data)
     members = data.members
     isLeader = data.leader == GetPlayerServerId(PlayerId())
 
-    local dest = Config.Corrals[data.dest]
+    local dest = Config.Destinations[data.dest]
     destBlip = BlipAddForCoords(STYLE_DEFAULT, dest.coords.x, dest.coords.y, dest.coords.z)
     SetBlipSprite(destBlip, joaat("blip_code_waypoint"), true)
     SetBlipName(destBlip, ("Entregar gado - %s"):format(dest.name))
-    GpsRoute(dest.coords)
+    pcall(SetBlipRoute, destBlip, true)
 
     Notify(("Leve %d cabeças de gado até %s. Chegue por trás da manada para tocá-la; [H] faz o gado disparar. (%d min)")
         :format(data.cowCount, dest.name, data.timeLimit), 8000)
@@ -344,7 +318,7 @@ RegisterNetEvent('ov_boiada:spawnHerd', function(data)
         return
     end
 
-    local start = Config.Corrals[data.from].coords
+    local start = Config.StartPoint.coords
     local nets = {}
     herdCows, herdOffsets = {}, {}
 
@@ -411,7 +385,7 @@ CreateThread(function()
             end
 
             for _, cow in ipairs(herdCows) do
-                if DoesEntityExist(cow) and not Bool(IsEntityDead(cow)) then
+                if DoesEntityExist(cow) and not IsEntityDead(cow) then
                     local o = herdOffsets[cow]
                     MoveCowTo(cow, herdAnchor.x + o.x, herdAnchor.y + o.y, herdAnchor.z, speed)
                 end
@@ -426,7 +400,7 @@ CreateThread(function()
 
         if isLeader and herdAnchor then
             for _, cow in ipairs(herdCows) do
-                if DoesEntityExist(cow) and not Bool(IsEntityDead(cow))
+                if DoesEntityExist(cow) and not IsEntityDead(cow)
                     and #(GetEntityCoords(cow) - herdAnchor) > Config.Herd.leashDistance then
                     local o = herdOffsets[cow]
                     MoveCowTo(cow, herdAnchor.x + o.x, herdAnchor.y + o.y, herdAnchor.z, Config.Herd.sprintSpeed)
@@ -443,9 +417,9 @@ local function CountCows(dest)
     local alive, inside, insideNets = 0, 0, {}
     for _, net in ipairs(cowNets) do
         local cow = EntFromNet(net)
-        if cow and not Bool(IsEntityDead(cow)) then
+        if cow and not IsEntityDead(cow) then
             alive = alive + 1
-            if #(GetEntityCoords(cow) - dest.coords) <= Config.CorralRadius then
+            if #(GetEntityCoords(cow) - dest.coords) <= dest.radius then
                 inside = inside + 1
                 insideNets[#insideNets + 1] = net
             end
@@ -459,14 +433,14 @@ CreateThread(function()
         local sleep = 1000
 
         if mission and #cowNets > 0 then
-            local dest = Config.Corrals[mission.dest]
+            local dest = Config.Destinations[mission.dest]
 
             -- blips das vacas (some quando a vaca morre)
             if Config.CowBlips then
                 for _, net in ipairs(cowNets) do
                     local cow = EntFromNet(net)
                     local blip = cowBlips[net]
-                    if cow and not Bool(IsEntityDead(cow)) then
+                    if cow and not IsEntityDead(cow) then
                         if not (blip and DoesBlipExist(blip)) then
                             cowBlips[net] = BlipAddForEntity(joaat("BLIP_STYLE_FRIENDLY"), cow)
                         end
@@ -494,7 +468,7 @@ CreateThread(function()
                 TriggerServerEvent('ov_boiada:deliver', mission.id, insideNets)
 
             -- algumas no curral: prompt para entregar só essas
-            elseif inside > 0 and #(GetEntityCoords(PlayerPedId()) - dest.coords) <= Config.CorralRadius + 10.0 then
+            elseif inside > 0 and #(GetEntityCoords(PlayerPedId()) - dest.coords) <= dest.radius + 10.0 then
                 sleep = 0
                 local title = ("Curral de %s: %d de %d vaca(s)"):format(dest.name, inside, alive)
                 UiPromptSetActiveGroupThisFrame(deliverGroup, VarString(10, 'LITERAL_STRING', title), 0, 0, 0, 0)
@@ -522,7 +496,7 @@ end, false)
 
 AddEventHandler('onResourceStop', function(res)
     if res ~= GetCurrentResourceName() then return end
-    for _, p in pairs(npcs) do if DoesEntityExist(p) then DeleteEntity(p) end end
+    if npc and DoesEntityExist(npc) then DeleteEntity(npc) end
     if prompt ~= 0 then UiPromptDelete(prompt) end
     if deliverPrompt ~= 0 then UiPromptDelete(deliverPrompt) end
     Cleanup()

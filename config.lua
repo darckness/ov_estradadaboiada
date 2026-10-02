@@ -11,14 +11,14 @@ Config = {}
 -- do vorp_hunting). Se algum capataz ficar num lugar ruim, AJUSTE com
 -- /mycoords e ponha a posição em coords e npc.
 Config.Corrals = {
-    { name = "Valentine",   coords = vector3(-270.20, 669.85, 113.31),    npc = vector4(-270.20, 669.85, 113.31, 331.3) },
-    { name = "Rhodes",      coords = vector3(1274.0, -1308.0, 77.0),      npc = vector4(1274.0, -1308.0, 77.0, 0.0) },
-    { name = "Strawberry",  coords = vector3(-1755.55, -396.48, 155.26),  npc = vector4(-1755.55, -396.48, 155.26, 181.4) },
-    { name = "Blackwater",  coords = vector3(-749.85, -1287.40, 43.03),   npc = vector4(-749.85, -1287.40, 43.03, 273.6) },
-    { name = "Saint Denis", coords = vector3(2817.94, -1326.77, 45.00),   npc = vector4(2817.94, -1326.77, 45.00, 51.8) },
-    { name = "Annesburg",   coords = vector3(2931.57, 1304.85, 43.48),    npc = vector4(2931.57, 1304.85, 43.48, 70.6) },
-    { name = "Armadillo",   coords = vector3(-3688.97, -2619.13, -14.75), npc = vector4(-3688.97, -2619.13, -14.75, 0.5) },
-    { name = "Tumbleweed",  coords = vector3(-5507.37, -2950.64, -1.89),  npc = vector4(-5507.37, -2950.64, -1.89, 251.5) },
+    { name = "Valentine",   coords = vector3(-207.53, 614.79, 113.29),    npc = vector4(-207.53, 614.79, 113.29, 101.0) },
+    { name = "Rhodes",      coords = vector3(1459.85, -1388.98, 78.96),      npc = vector4(1459.85, -1388.98, 78.96, 147.5) },
+    { name = "Strawberry",  coords = vector3(-1793.48, -567.99, 155.99),  npc = vector4(-1793.48, -567.99, 155.99, 163.6) },
+    { name = "Blackwater",  coords = vector3(-970.54, -1335.04, 51.22),   npc = vector4(-970.54, -1335.04, 51.22, 233.8) },
+    { name = "Saint Denis", coords = vector3(2569.16, -737.38, 42.38),   npc = vector4(2569.16, -737.38, 42.38, 231.7) },
+    { name = "Annesburg",   coords = vector3(2988.10, 1442.60, 45.54),    npc = vector4(2988.10, 1442.60, 45.54, 324.2) },
+    { name = "Armadillo",   coords = vector3(-3698.67, -2530.29, -13.99), npc = vector4(-3698.67, -2530.29, -13.99, 119.7) },
+    { name = "Tumbleweed",  coords = vector3(-5525.29, -3030.45, -2.09),  npc = vector4(-5525.29, -3030.45, -2.09, 283.1) },
 }
 Config.CorralRadius = 15.0          -- raio do curral de entrega
 

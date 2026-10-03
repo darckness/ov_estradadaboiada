@@ -150,9 +150,21 @@ end)
 -- =========================================================
 -- Disparada: qualquer membro pode assustar o gado (o líder executa)
 -- =========================================================
-RegisterNetEvent('ov_boiada:sprint', function()
+-- debug: o líder manda como a manada está "pensando" pros outros do grupo verem
+RegisterNetEvent('ov_boiada:debug', function(id, d)
+    local m = missions[id]
+    if not m or m.leader ~= source or type(d) ~= "table" then return end
+    for src in pairs(m.members) do
+        if src ~= m.leader then TriggerClientEvent('ov_boiada:debugState', src, d) end
+    end
+end)
+
+-- [Q] troca a marcha da manada (qualquer vaqueiro do grupo); todos ficam sabendo
+RegisterNetEvent('ov_boiada:gear', function()
     local m = missions[playerMission[source] or -1]
-    if m then TriggerClientEvent('ov_boiada:doSprint', m.leader) end
+    if not m then return end
+    m.gear = (m.gear or 1) % #Config.Herd.gears + 1
+    SendToMembers(m, 'ov_boiada:setGear', m.gear)
 end)
 
 -- =========================================================

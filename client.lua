@@ -18,7 +18,11 @@ local isLeader = false
 local herdCows = {}        -- handles das vacas
 local herdOffsets = {}     -- [cow] = { x, y } posição fixa na formação
 local herdAnchor = nil
-local sprintUntil = 0
+local herdHeading = nil    -- { x, y } rumo da manada (vetor unitário)
+local lastOrder = {}       -- [vaca] = { pos, speed } última ordem dada (evita reordenar à toa)
+local herdDebug = nil      -- { x, y, z, hx, hy, mode, turn } (desenhado no jogo)
+local debugOn = Config.HerdDebug and Config.HerdDebug.enabled or false
+local herdGear = 1         -- marcha atual (1 caminhando, 2 trotando)
 
 local function Notify(msg, ms)
     Core.NotifyRightTip(msg, ms or 4000)
@@ -276,7 +280,9 @@ local function Cleanup()
     end
 
     mission, members, cowNets = nil, {}, {}
-    isLeader, herdCows, herdOffsets, herdAnchor, sprintUntil = false, {}, {}, nil, 0
+    isLeader, herdCows, herdOffsets, herdAnchor, herdGear = false, {}, {}, nil, 1
+    herdHeading, herdDebug = nil, nil
+    lastOrder = {}
 end
 
 RegisterNetEvent('ov_boiada:joined', function(data)
@@ -291,7 +297,7 @@ RegisterNetEvent('ov_boiada:joined', function(data)
     SetBlipName(destBlip, ("Entregar gado - %s"):format(dest.name))
     GpsRoute(dest.coords)
 
-    Notify(("Leve %d cabeças de gado até %s. Chegue por trás da manada para tocá-la; [H] faz o gado disparar. (%d min)")
+    Notify(("Leve %d cabeças de gado até %s. Chegue por trás da manada para tocá-la; [Q] troca a marcha (caminhar/trotar). (%d min)")
         :format(data.cowCount, dest.name, data.timeLimit), 8000)
     if #members > 1 then
         Notify(("Comitiva formada com %d vaqueiros."):format(#members), 5000)
@@ -307,31 +313,18 @@ RegisterNetEvent('ov_boiada:finish', function(message)
 end)
 
 -- =========================================================
--- Disparada [H]
+-- Marchas [Q]: 1 = caminhando, 2 = trotando (todas iguais)
 -- =========================================================
-RegisterNetEvent('ov_boiada:doSprint', function()
-    if isLeader then sprintUntil = GetGameTimer() + Config.Herd.sprintDuration end
+RegisterNetEvent('ov_boiada:setGear', function(g)
+    herdGear = g
+    local gear = Config.Herd.gears[g]
+    if gear then Notify(gear.label, 2500) end
 end)
 
-RegisterKeyMapping('boiada_disparar', 'Disparar o gado (correr)', 'keyboard', Config.Herd.sprintKey)
-RegisterCommand('boiada_disparar', function()
+RegisterKeyMapping('boiada_marcha', 'Boiada: trocar a marcha da manada', 'keyboard', Config.Herd.gearKey)
+RegisterCommand('boiada_marcha', function()
     if not mission then return end
-    local me = GetEntityCoords(PlayerPedId())
-
-    local near = false
-    for _, net in ipairs(cowNets) do
-        local cow = EntFromNet(net)
-        if cow and #(GetEntityCoords(cow) - me) <= Config.Herd.sprintRange then near = true break end
-    end
-    if not near then
-        return Notify("Chegue mais perto do gado para assustá-lo.", 3000)
-    end
-
-    if isLeader then
-        sprintUntil = GetGameTimer() + Config.Herd.sprintDuration
-    else
-        TriggerServerEvent('ov_boiada:sprint')
-    end
+    TriggerServerEvent('ov_boiada:gear')
 end, false)
 
 -- =========================================================
@@ -360,6 +353,9 @@ RegisterNetEvent('ov_boiada:spawnHerd', function(data)
 
             SetEntityAsMissionEntity(cow, true, true)
             SetBlockingOfNonTemporaryEvents(cow, true)
+            -- gado treinado: não foge de susto nem dispara sozinho
+            pcall(SetPedFleeAttributes, cow, 0, false)
+            pcall(Citizen.InvokeNative, 0xAEB97D84CDF3C00B, cow, false) -- _SET_ANIMAL_IS_WILD: domesticado
             SetPedCanBeTargetted(cow, false)
             SetRandomOutfitVariation(cow, true)
 
@@ -382,54 +378,118 @@ RegisterNetEvent('ov_boiada:spawnHerd', function(data)
     end
 
     herdAnchor = start
+    -- rumo inicial: na direção do curral de destino
+    local dest = Config.Corrals[data.dest].coords
+    local dx, dy = dest.x - start.x, dest.y - start.y
+    local dl = math.sqrt(dx * dx + dy * dy)
+    herdHeading = dl > 0.01 and { x = dx / dl, y = dy / dl } or { x = 0.0, y = 1.0 }
     TriggerServerEvent('ov_boiada:spawned', data.id, nets)
 end)
 
 -- =========================================================
 -- Líder: loop da manada (âncora) + trava de segurança
 -- =========================================================
+-- centro de verdade da manada (média das vacas vivas)
+local function HerdCenter()
+    local sx, sy, sz, n = 0.0, 0.0, 0.0, 0
+    for _, cow in ipairs(herdCows) do
+        if DoesEntityExist(cow) and not Bool(IsEntityDead(cow)) then
+            local c = GetEntityCoords(cow)
+            sx, sy, sz, n = sx + c.x, sy + c.y, sz + c.z, n + 1
+        end
+    end
+    if n == 0 then return nil end
+    return vector3(sx / n, sy / n, sz / n)
+end
+
+-- só manda a vaca andar se o destino mudou de verdade (reordenar toda hora faz ela engasgar)
+local function OrderCow(cow, target, speed, force)
+    local last = lastOrder[cow]
+    if not force and last and last.speed == speed and #(last.pos - target) < 1.0 then return end
+    lastOrder[cow] = { pos = target, speed = speed }
+    MoveCowTo(cow, target.x, target.y, target.z, speed)
+end
+
 CreateThread(function()
     while true do
         Wait(Config.Herd.checkInterval)
 
         if isLeader and herdAnchor then
-            local sprinting = GetGameTimer() < sprintUntil
-            local speed = sprinting and Config.Herd.sprintSpeed or Config.Herd.walkSpeed
-            local step = sprinting and Config.Herd.sprintStepDistance or Config.Herd.walkStepDistance
-
-            local pusher = ClosestMemberCoords(herdAnchor)
+            local H = Config.Herd
+            local center = HerdCenter() or herdAnchor
+            local pusher = ClosestMemberCoords(center)
+            local dist = #(vector2(pusher.x, pusher.y) - vector2(center.x, center.y))
+            local mode, turn, moving = "ninguém tocando", 0.0, false
 
             -- disparada anda sozinha; fora dela, só anda com alguém perto
-            if sprinting or #(pusher - herdAnchor) < Config.Herd.pushRange then
-                local dir = herdAnchor - pusher
-                local len = #dir
-                local dx, dy = 0.0, 1.0
-                if len > 0.01 then dx, dy = dir.x / len, dir.y / len end
-
-                local nx, ny = herdAnchor.x + dx * step, herdAnchor.y + dy * step
-                herdAnchor = vector3(nx, ny, GroundZ(nx, ny, herdAnchor.z))
+            if dist < H.pushRange then
+                moving = true
+                local fx, fy = herdHeading.x, herdHeading.y
+                local rx, ry = pusher.x - center.x, pusher.y - center.y
+                local len = math.sqrt(rx * rx + ry * ry)
+                if len > 0.01 then
+                    -- onde quem toca está em relação ao RUMO (medido do CENTRO das vacas):
+                    -- -1 atrás, 0 lado, 1 frente
+                    local nx, ny = rx / len, ry / len
+                    local along = nx * fx + ny * fy
+                    local rate
+                    if along < H.rearCone then rate, mode = H.turnRear, "por trás"
+                    elseif along < H.frontCone then rate, mode = H.turnSide, "pela lateral"
+                    else rate, mode = H.turnFront, "pela frente" end
+                    -- a manada quer ir pra LONGE de quem toca; o rumo vira até 'rate' graus nessa direção
+                    local cur = math.deg(math.atan(fy, fx))
+                    local want = math.deg(math.atan(-ny, -nx))
+                    local diff = ((want - cur + 540) % 360) - 180
+                    turn = math.max(-rate, math.min(rate, diff))
+                    local r = math.rad(turn)
+                    fx, fy = fx * math.cos(r) - fy * math.sin(r), fx * math.sin(r) + fy * math.cos(r)
+                    local fl = math.sqrt(fx * fx + fy * fy)
+                    herdHeading = { x = fx / fl, y = fy / fl }
+                end
             end
 
-            for _, cow in ipairs(herdCows) do
-                if DoesEntityExist(cow) and not Bool(IsEntityDead(cow)) then
-                    local o = herdOffsets[cow]
-                    MoveCowTo(cow, herdAnchor.x + o.x, herdAnchor.y + o.y, herdAnchor.z, speed)
+            -- velocidade: a da marcha [Q], IGUAL pra todas as vacas.
+            -- A âncora fica SEMPRE um pouco à frente do centro das vacas (não dispara sozinha).
+            local gear = H.gears[herdGear] or H.gears[1]
+            local speed, lead = gear.speed, moving and gear.lead or 0.0
+            local ax, ay = center.x + herdHeading.x * lead, center.y + herdHeading.y * lead
+            herdAnchor = vector3(ax, ay, GroundZ(ax, ay, center.z))
+
+            if moving then
+                for _, cow in ipairs(herdCows) do
+                    if DoesEntityExist(cow) and not Bool(IsEntityDead(cow)) then
+                        local o = herdOffsets[cow]
+                        OrderCow(cow, vector3(herdAnchor.x + o.x, herdAnchor.y + o.y, herdAnchor.z), speed)
+                    end
                 end
+            end
+
+            -- debug: o líder calcula e manda pros outros do grupo verem também
+            herdDebug = {
+                x = center.x, y = center.y, z = center.z, hx = herdHeading.x, hy = herdHeading.y,
+                mode = mode, turn = turn, px = pusher.x, py = pusher.y, pz = pusher.z, moving = moving, gear = herdGear,
+            }
+            if debugOn and mission and #members > 1 then
+                TriggerServerEvent('ov_boiada:debug', mission.id, herdDebug)
             end
         end
     end
 end)
 
+-- trava de segurança: vaca que se afastou do CENTRO da manada volta trotando
 CreateThread(function()
     while true do
         Wait(Config.Herd.leashCheckInterval)
 
         if isLeader and herdAnchor then
+            local center = HerdCenter()
             for _, cow in ipairs(herdCows) do
-                if DoesEntityExist(cow) and not Bool(IsEntityDead(cow))
-                    and #(GetEntityCoords(cow) - herdAnchor) > Config.Herd.leashDistance then
+                if center and DoesEntityExist(cow) and not Bool(IsEntityDead(cow))
+                    and #(GetEntityCoords(cow) - center) > Config.Herd.leashDistance then
                     local o = herdOffsets[cow]
-                    MoveCowTo(cow, herdAnchor.x + o.x, herdAnchor.y + o.y, herdAnchor.z, Config.Herd.sprintSpeed)
+                    -- volta na MESMA velocidade das outras (correr assusta a manada)
+                    local gear = Config.Herd.gears[herdGear] or Config.Herd.gears[1]
+                    OrderCow(cow, vector3(herdAnchor.x + o.x, herdAnchor.y + o.y, herdAnchor.z), gear.speed, true)
                 end
             end
         end
@@ -506,6 +566,61 @@ CreateThread(function()
         end
 
         Wait(sleep)
+    end
+end)
+
+-- =========================================================
+-- DEBUG no jogo: como a manada "pensa"
+-- =========================================================
+RegisterNetEvent('ov_boiada:debugState', function(d) if not isLeader then herdDebug = d end end)
+
+RegisterCommand('boiada_debug', function()
+    debugOn = not debugOn
+    Notify(debugOn and "Debug da manada LIGADO." or "Debug da manada desligado.", 3000)
+end, false)
+
+local MARKER_CYLINDER = 0x94FDAE17
+local function Disc(x, y, z, radius, r, g, b, a)
+    Citizen.InvokeNative(0x2A32FAA57B937173, MARKER_CYLINDER, x, y, z - 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        radius * 2.0, radius * 2.0, 0.35, r, g, b, a, false, false, 2, false, nil, nil, false) -- _DRAW_MARKER
+end
+
+local function Text3D(x, y, z, text)
+    local ok, sx, sy = GetScreenCoordFromWorldCoord(x, y, z)
+    if not ok then return end
+    BgSetTextScale(0.32, 0.32)
+    BgSetTextColor(255, 255, 255, 230)
+    -- centraliza "na mão" (~0,0055 da tela por letra nessa escala)
+    BgDisplayText(VarString(10, "LITERAL_STRING", text), sx - #text * 0.0028, sy)
+end
+
+CreateThread(function()
+    while true do
+        local d = herdDebug
+        if debugOn and mission and d then
+            local HD = Config.HerdDebug
+            -- verde: área da manada
+            Disc(d.x, d.y, d.z, HD.herdRadius, 40, 220, 80, 70)
+            -- azul: rumo (pontinhos) e o próximo ponto aonde ela vai
+            for k = 1, 5 do
+                local f = HD.lookAhead * k / 6
+                local px, py = d.x + d.hx * f, d.y + d.hy * f
+                Disc(px, py, GroundZ(px, py, d.z), 0.25, 60, 140, 255, 180)
+            end
+            local tx, ty = d.x + d.hx * HD.lookAhead, d.y + d.hy * HD.lookAhead
+            Disc(tx, ty, GroundZ(tx, ty, d.z), 1.2, 60, 140, 255, 120)
+            Text3D(d.x, d.y, d.z + 2.5, ("Manada: %s | marcha %d"):format(d.mode or "?", d.gear or 1))
+            -- vermelho: onde está quem toca + quanto e pra que lado a manada vai virar
+            if d.px then
+                Disc(d.px, d.py, GroundZ(d.px, d.py, d.pz), 1.0, 230, 50, 50, 150)
+                local t = d.turn or 0
+                local side = math.abs(t) < 0.5 and "segue reto" or ("vira %.0f° p/ %s"):format(math.abs(t), t > 0 and "esquerda" or "direita")
+                Text3D(d.px, d.py, d.pz + 1.2, d.moving and side or "longe demais: manada parada")
+            end
+            Wait(0)
+        else
+            Wait(500)
+        end
     end
 end)
 

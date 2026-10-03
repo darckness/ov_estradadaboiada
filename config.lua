@@ -108,15 +108,23 @@ Config.Herd = {
     pushRange = 24.0,             -- distância da âncora em que a manada reage e anda
     formationRadius = 2.0,
 
-    walkSpeed = 1.0,
-    walkStepDistance = 2.0,
+    -- DUAS MARCHAS (todas as vacas sempre na MESMA velocidade - gado treinado):
+    -- [Q] alterna entre a 1 (caminhando) e a 2 (trotando); a marcha fica até apertar de novo.
+    -- speed = velocidade das vacas | lead = quanto a âncora fica À FRENTE do centro delas (m)
+    gearKey = 'q',
+    gears = {
+        { label = "Marcha 1: caminhando", speed = 1.0, lead = 3.0 },
+        { label = "Marcha 2: trotando",   speed = 2.0, lead = 4.5 },
+    },
 
-    -- Disparada: aperte a tecla pra manada correr por alguns segundos
-    sprintKey = 'h',
-    sprintRange = 18.0,
-    sprintSpeed = 3.0,
-    sprintStepDistance = 4.5,
-    sprintDuration = 3000,
+
+    -- Rumo da manada: ela vira pro lado OPOSTO de quem toca. Quanto mais pra
+    -- frente (na lateral) a pessoa estiver, mais brusca a curva (graus por passo).
+    turnRear  = 6.0,    -- tocando por TRÁS (até 60° pra cada lado do rabo da manada)
+    turnSide  = 30.0,   -- tocando pela LATERAL
+    turnFront = 50.0,   -- pela FRENTE: a manada refuga e vira pra trás
+    rearCone  = -0.5,   -- (cosseno) até onde conta como "atrás"  (-0.5 = 60° pra cada lado)
+    frontCone = 0.35,   -- (cosseno) a partir de onde conta como "frente" (~70°)
 
     -- Trava de segurança: vaca muito longe da âncora recebe ordem reforçada
     leashCheckInterval = 1500,
@@ -124,3 +132,12 @@ Config.Herd = {
 }
 
 Config.CheckInterval = 2000 -- ms entre verificações de chegada
+
+-- DEBUG no jogo: círculo VERDE = área da manada | pontos + círculo AZUL = rumo
+-- e o próximo ponto aonde ela vai | texto = de onde está sendo tocada.
+-- Liga/desliga no jogo com /boiada_debug
+Config.HerdDebug = {
+    enabled = true,
+    herdRadius = 5.0,   -- raio do círculo verde
+    lookAhead = 7.0,    -- distância do círculo azul (à frente, no rumo)
+}

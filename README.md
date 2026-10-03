@@ -15,7 +15,7 @@ ele solta a manada e a comitiva conduz o gado a cavalo até o comprador.
    Cada vaqueiro extra aumenta o total em `bonusPerMember`, e o valor é
    dividido entre todos.
 3. A manada anda como um bloco: chegue **por trás** dela para tocá-la.
-   **[H]** faz o gado disparar por alguns segundos (qualquer membro pode).
+   **[Q]** troca a marcha: 1 = caminhando, 2 = trotando (todas as vacas na mesma velocidade; qualquer membro pode).
 4. Cada vaca tem um blip pequeno no mapa, para achar as desgarradas.
 5. No destino:
    - se todas as vacas vivas estiverem no curral, a entrega é automática;
